@@ -1,0 +1,12 @@
+eureka
+configuration
+mysql
+elasticsearch
+nginx
+redis
+authentication
+notification
+apigateway
+buyer
+order
+buyer-ui

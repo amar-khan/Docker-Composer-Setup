@@ -1,0 +1,518 @@
+version: '2.1'
+services:
+  configuration: 
+    build:
+        context: ./artifact/configuration-service/
+        dockerfile: DevDockerfile
+        args:
+          service_name: configuration
+    container_name: configuration
+    env_file:
+      - ./config/env/mac/config.env
+    environment:
+      - JAVA_TOOL_OPTIONS        
+    volumes:
+      - ./code/configuration-store:/home/app/config-store
+      - ./artifact/configuration-service:/home/app/
+    ports:
+      - $debugport    
+      - 8888:8888
+    restart: on-failure       
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    mem_limit: 256m  
+  mysql:
+    container_name: mysql
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: 'root' # TODO: Change this
+      MYSQL_USER: 'root'
+      MYSQL_PASS: 'root'
+    volumes:
+      - ~/donotdelete/mysqldata:/var/lib/mysql 
+    ports:
+      - 3307:3306
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 3 
+    mem_limit: $mysql_mem_limit     
+  eureka: 
+    build:
+      context: ./artifact/eureka-service/
+      dockerfile: DevDockerfile   
+      args:
+        service_name: eureka
+    container_name: eureka    
+    env_file:
+      - ./config/env/mac/eureka.env
+      - ./config/env/mac/common.env  
+    environment:
+      - JAVA_TOOL_OPTIONS 
+    volumes:
+      - ./artifact/eureka-service:/home/app/                
+    ports:
+      - $debugport    
+      - 8761:8761
+    depends_on:
+      configuration:
+          condition: service_healthy    
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5   
+    mem_limit: 256m                        
+  apigateway: 
+    build:
+      context: ./artifact/api-gateway-service/
+      dockerfile: DevDockerfile   
+      args:
+        service_name: apigateway
+    container_name: apigateway          
+    env_file:
+      - ./config/env/mac/api.env
+      - ./config/env/mac/common.env
+    environment:
+      - JAVA_TOOL_OPTIONS       
+    volumes:
+      - ./artifact/api-gateway-service:/home/app/                   
+    ports:
+      - $debugport    
+      - 8787:8787
+    depends_on:
+      configuration:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy   
+      redis:
+          condition: service_started             
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8787/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5 
+    mem_limit: 256m                    
+  redis:
+    container_name: redis     
+    image: redis:alpine
+    healthcheck:
+        test: ["CMD", "redis-cli","ping"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+    ports:
+      - 6379:6379              
+  authentication: 
+    build:
+      context: ./artifact/authentication-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: authentication
+    container_name: authentication    
+    env_file:
+      - ./config/env/mac/auth.env
+      - ./config/env/mac/common.env  
+      - ./config/env/aws.env    
+    environment:
+      - JAVA_TOOL_OPTIONS 
+    volumes:
+      - ./artifact/authentication-service:/home/app/            
+    ports:
+      - $debugport    
+      - 8886:8886
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy                     
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8886/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5 
+    mem_limit: 356m
+  wh-data: 
+    build:
+      context: ./artifact/wh-data-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: wh-data
+    container_name: wh-data    
+    env_file:
+      - ./config/env/mac/wh-data.env
+      - ./config/env/mac/common.env
+      - ./config/env/aws.env     
+    environment:
+      - JAVA_TOOL_OPTIONS 
+    volumes:
+      - ./artifact/wh-data-service:/home/app/            
+    ports:
+      - $debugport    
+      - 8092:8092
+    depends_on:
+      configuration:
+          condition: service_healthy
+      eureka:
+          condition: service_healthy                     
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8092/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5 
+    mem_limit: 256m                      
+  buyer-ui: 
+    build:
+      context: ./artifact/buyer-ui/dist/
+      dockerfile: DevDockerNodefile
+      args:
+        service_name: buyer-ui
+    container_name: buyer_ui
+    volumes:
+      - ./artifact/buyer-ui/dist:/var/www/html/portal    
+    ports:
+      - $debugport    
+      - 8081:80
+    restart: on-failure  
+    healthcheck:
+        test: curl --fail -s http://localhost:8081/ || exit 0
+        interval: 10s
+        timeout: 10s
+        retries: 5  
+  seller-ui: 
+    build:
+      context: ./artifact/seller-ui/dist/
+      dockerfile: DevDockerNodefile
+      args:
+        service_name: seller-ui
+    container_name: seller_ui
+    volumes:
+      - ./artifact/seller-ui/dist:/var/www/html/portal    
+    ports:
+      - $debugport    
+      - 8082:80
+    restart: on-failure  
+    healthcheck:
+        test: curl --fail -s http://localhost:8082/ || exit 0
+        interval: 10s
+        timeout: 10s
+        retries: 5              
+  buyer: 
+    build:
+      context: ./artifact/buyer-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: buyer
+    container_name: buyer    
+    env_file:
+      - ./config/env/mac/buyer.env 
+      - ./config/env/mac/common.env 
+      - ./config/env/aws.env 
+    environment:
+      - JAVA_TOOL_OPTIONS
+    volumes:
+      - ./artifact/buyer-service:/home/app/        
+    ports:
+      - $debugport    
+      - 8788:8788    
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy         
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8788/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+    mem_limit: 256m                        
+  notification: 
+    build:
+      context: ./artifact/notification-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: notification
+    container_name: notification    
+    env_file:
+      - ./config/env/mac/notification.env 
+      - ./config/env/mac/common.env 
+      - ./config/env/aws.env 
+    environment:
+      - JAVA_TOOL_OPTIONS  
+    volumes:
+      - ./artifact/notification-service:/home/app/  
+      - ./code/myapp-notification-resources:/home/app/myapp-notification-resources/                   
+    ports:
+      - $debugport    
+      - 8091:8091
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy         
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5  
+    mem_limit: 256m      
+  logistics: 
+    build:
+      context: ./artifact/logistics-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: logistics
+    container_name: logistics    
+    env_file:
+      - ./config/env/mac/logistics.env 
+      - ./config/env/mac/common.env 
+      - ./config/env/aws.env     
+    environment:
+      - JAVA_TOOL_OPTIONS   
+    volumes:
+      - ./artifact/logistics-service:/home/app/          
+    ports:
+      - $debugport    
+      - 8777:8777
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy         
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8777/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 3  
+    mem_limit: 256m        
+  order: 
+    build:
+      context: ./artifact/order-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: order
+    container_name: order    
+    env_file:
+      - ./config/env/mac/order.env 
+      - ./config/env/mac/common.env 
+      - ./config/env/aws.env 
+    environment:
+      - JAVA_TOOL_OPTIONS  
+    volumes:
+      - ./artifact/order-service:/home/app/             
+    ports:
+      - $debugport    
+      - 8792:8792
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy        
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8792/actuator/health"]
+        interval: 30s
+        timeout: 30s
+        retries: 10  
+    mem_limit: 512m      
+  promotion: 
+    build:
+      context: ./artifact/promotion-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: promotion
+    container_name: promotion    
+    env_file:
+      - ./config/env/mac/promotion.env 
+      - ./config/env/mac/common.env 
+      - ./config/env/aws.env 
+    environment:
+      - JAVA_TOOL_OPTIONS  
+    volumes:
+      - ./artifact/promotion-service:/home/app/             
+    ports:
+      - $debugport    
+      - 8085:8085
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy        
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5  
+    mem_limit: 256m         
+  import: 
+    build:
+      context: ./artifact/import-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: import
+    container_name: import    
+    env_file:
+      - ./config/env/mac/import.env 
+      - ./config/env/mac/common.env 
+      - ./config/env/aws.env 
+    environment:
+      - JAVA_TOOL_OPTIONS 
+    volumes:
+      - ./artifact/import-service:/home/app/               
+    ports:
+      - $debugport    
+      - 8555:8555
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy        
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8555/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5  
+    mem_limit: 256m      
+  integration: 
+    build:
+      context: ./artifact/integration-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: integration
+    container_name: integration    
+    env_file:
+      - ./config/env/mac/integration.env 
+      - ./config/env/mac/common.env 
+    environment:
+      - JAVA_TOOL_OPTIONS  
+    volumes:
+      - ./artifact/integration-service:/home/app/             
+    ports:
+      - $debugport    
+      - 8120:8120
+    depends_on:
+      configuration:
+          condition: service_healthy     
+      mysql:
+          condition: service_healthy 
+      eureka:
+          condition: service_healthy        
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8120/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5  
+    mem_limit: 256m                                        
+  cache: 
+    build:
+      context: ./artifact/cache-service/
+      dockerfile: DevDockerfile
+      args:
+        service_name: cache
+    container_name: cache    
+    env_file:
+      - ./config/env/mac/cache.env 
+      - ./config/env/mac/common.env 
+    environment:
+      - JAVA_TOOL_OPTIONS    
+    volumes:
+      - ./artifact/cache-service:/home/app/           
+    ports:
+      - $debugport    
+      - 8090:8090
+    depends_on:
+      - "eureka" 
+      - "mysql"
+      - "redis"       
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8090/actuator/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5 
+    mem_limit: 256m   
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    volumes:
+      - ./nginx/mac/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/fullchain.pem:/etc/nginx/ssl/fullchain.pem
+      - ./nginx/privkey.pem:/etc/nginx/ssl/privkey.pem
+    ports:
+      - $debugport    
+      - 80:80
+      - 443:443
+    depends_on:
+      configuration:
+          condition: service_healthy      
+      eureka:
+          condition: service_healthy   
+    restart: on-failure  
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost/healthcheck/"]
+        interval: 20s
+        timeout: 10s
+        retries: 3 
+    mem_limit: 256m              
+  elasticsearch:
+    image: blacktop/elasticsearch:6.8
+    container_name: elasticsearch
+    env_file:
+      - ./config/env/mac/es.env    
+    volumes:
+      - ~/donotdelete/esdata:/usr/share/elasticsearch/data:rw
+    ports:
+      - "9200:9200"
+      - "9300:9300" 
+    restart: on-failure   
+    healthcheck:
+        test: ["CMD", "wget","--spider","-S","http://localhost:9200"]
+        interval: 30s
+        timeout: 30s
+        retries: 10
+    mem_limit: $es_mem_limit    
+  kibana:
+    container_name: kibana
+    image: blacktop/kibana:6.8.10
+    env_file:
+      - ./config/env/mac/kibana.env
+    ports:
+      - '5601:5601'
+    mem_limit: 256m       
+    healthcheck:
+        test: ["CMD", "wget","--spider","-S","http://localhost:5601/app/kibana"]
+        retries: 6
+    depends_on:
+      elasticsearch:
+          condition: service_healthy   
+volumes:
+  mysqldata: 
+  esdata:

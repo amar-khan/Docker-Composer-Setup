@@ -1,0 +1,1 @@
+export SETUP_MYSQL_PWD=root

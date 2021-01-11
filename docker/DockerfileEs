@@ -1,0 +1,11 @@
+FROM blacktop/elasticsearch:6.8
+
+RUN apk add  --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/v3.7/main/ nodejs=10.19.0-r0
+
+RUN apk add npm 
+RUN apk add curl
+
+RUN  npm --version \
+ &&  node -v
+
+RUN npm install -g elasticdump

@@ -1,0 +1,24 @@
+FROM mhart/alpine-node:slim-10
+LABEL "maintainer"="amar.khan@oitolabs.com"
+
+RUN apk update && \
+    apk add --no-cache apache2
+
+WORKDIR /var/www/html/portal
+
+RUN echo $(ls -la /etc/)
+
+ARG service_name
+
+RUN mkdir /run/apache2
+
+# Open port for httpd access
+EXPOSE 8081
+
+COPY ./httpd.conf /etc/apache2/
+
+
+CMD ["-D","FOREGROUND"]
+
+# Srart httpd when container runs
+ENTRYPOINT ["/usr/sbin/httpd"]
